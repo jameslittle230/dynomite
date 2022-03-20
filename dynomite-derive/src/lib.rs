@@ -4,7 +4,7 @@
 //!
 //! ```ignore
 //! use dynomite::{Item, FromAttributes, Attributes};
-//! use dynomite::dynamodb::AttributeValue;
+//! use dynomite::AttributeValue;
 //!
 //! // derive Item
 //! #[derive(Item, PartialEq, Debug, Clone)]
@@ -213,7 +213,7 @@ impl DataEnum {
 }
 
 /// A Field and all its extracted dynomite derive attrs
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ItemField<'a> {
     field: &'a Field,
     attrs: Vec<FieldAttr>,
@@ -356,16 +356,16 @@ fn expand_attribute(ast: DeriveInput) -> impl ToTokens {
 
 /// ```rust,ignore
 /// impl ::dynomite::Attribute for Name {
-///   fn into_attr(self) -> ::dynomite::dynamodb::AttributeValue {
+///   fn into_attr(self) -> ::dynomite::AttributeValue {
 ///     let arm = match self {
 ///        Name::Variant => "Variant".to_string()
 ///     };
-///     ::dynomite::dynamodb::AttributeValue {
+///     ::dynomite::AttributeValue {
 ///        s: Some(arm),
 ///        ..Default::default()
 ///     }
 ///   }
-///   fn from_attr(value: ::dynomite::dynamodb::AttributeValue) -> Result<Self, ::dynomite::AttributeError> {
+///   fn from_attr(value: ::dynomite::AttributeValue) -> Result<Self, ::dynomite::AttributeError> {
 ///     value.s.ok_or(::dynomite::AttributeError::InvalidType)
 ///       .and_then(|value| match &value[..] {
 ///          "Variant" => Ok(Name::Variant),
@@ -395,16 +395,16 @@ fn make_dynomite_attr(
 
     quote! {
         impl #attr for #name {
-            fn into_attr(self) -> ::dynomite::dynamodb::AttributeValue {
+            fn into_attr(self) -> ::dynomite::AttributeValue {
                 let arm = match self {
                     #(#into_match_arms)*
                 };
-                ::dynomite::dynamodb::AttributeValue {
+                ::dynomite::AttributeValue {
                     s: ::std::option::Option::Some(arm),
                     ..::std::default::Default::default()
                 }
             }
-            fn from_attr(value: ::dynomite::dynamodb::AttributeValue) -> ::std::result::Result<Self, #err> {
+            fn from_attr(value: ::dynomite::AttributeValue) -> ::std::result::Result<Self, #err> {
                 value.s.ok_or(::dynomite::AttributeError::InvalidType)
                     .and_then(|value| match &value[..] {
                         #(#from_match_arms)*
@@ -503,7 +503,7 @@ fn make_dynomite_item(
         return Err(syn::Error::new(
             name.span(),
             format!(
-                "All Item's must declare one and only one partition_key. The `{}` Item declared {}",
+                "All items must declare one and only one partition_key. The `{}` Item declared {}",
                 name, partition_key_count
             ),
         ));
@@ -699,7 +699,7 @@ fn get_item_impls(
 
 /// ```rust,ignore
 /// impl ::dynomite::Item for Name {
-///   fn key(&self) -> ::std::collections::HashMap<String, ::dynomite::dynamodb::AttributeValue> {
+///   fn key(&self) -> ::std::collections::HashMap<String, ::dynomite::AttributeValue> {
 ///     let mut keys = ::std::collections::HashMap::new();
 ///     keys.insert("field_deser_name", to_attribute_value(field));
 ///     keys
@@ -712,12 +712,18 @@ fn get_item_trait(
 ) -> syn::Result<impl ToTokens> {
     let item = quote!(::dynomite::Item);
     let attribute_map = quote!(
-        ::std::collections::HashMap<String, ::dynomite::dynamodb::AttributeValue>
+        ::std::collections::HashMap<String, ::dynomite::AttributeValue>
     );
     let partition_key_field = fields.iter().find(|f| f.is_partition_key());
     let sort_key_field = fields.iter().find(|f| f.is_sort_key());
     let partition_key_insert = partition_key_field.map(get_key_inserter).transpose()?;
     let sort_key_insert = sort_key_field.map(get_key_inserter).transpose()?;
+
+    let partition_key_tuple = partition_key_field.map(get_key_tuple);
+    let sort_key_tuple = sort_key_field
+        .map(get_key_tuple)
+        .map(|tuple| quote! { Some(#tuple) })
+        .unwrap_or_else(|| quote! { None });
 
     Ok(partition_key_field
         .map(|_| {
@@ -729,10 +735,29 @@ fn get_item_trait(
                         #sort_key_insert
                         keys
                     }
+
+                    fn partition_key(&self) -> (String, ::dynomite::dynamodb::model::AttributeValue) {
+                        #partition_key_tuple
+                    }
+                    fn sort_key(&self) -> Option<(String, ::dynomite::dynamodb::model::AttributeValue)> {
+                        #sort_key_tuple
+                    }
                 }
             }
         })
         .unwrap_or_else(proc_macro2::TokenStream::new))
+}
+
+/// ```rust,ignore
+/// ("field_deser_name", to_attribute_value(field))
+/// ```
+fn get_key_tuple(field: &ItemField) -> impl ToTokens {
+    let to_attribute_value = quote!(::dynomite::Attribute::into_attr);
+    let field_deser_name = field.deser_name();
+    let field_ident = &field.field.ident;
+    quote! {
+        (#field_deser_name.to_string(), #to_attribute_value(self.#field_ident.clone()))
+    }
 }
 
 /// ```rust,ignore

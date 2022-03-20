@@ -7,7 +7,7 @@ use syn::{
 };
 
 /// Represents a parsed attribute that appears in `#[dynomite(...)]`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Attr<Kind> {
     /// The identifier part of the attribute (e.g. `rename` in `#[dynomite(rename = "foo"`))
     pub(crate) ident: Ident,
@@ -22,7 +22,7 @@ pub(crate) type EnumAttr = Attr<EnumAttrKind>;
 /// Attribute that appears on enum varinats
 pub(crate) type VariantAttr = Attr<VariantAttrKind>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum FieldAttrKind {
     /// Denotes field should be replaced with Default impl when absent in ddb
     Default,
