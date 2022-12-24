@@ -827,7 +827,7 @@ fn get_key_struct(
     Ok(partition_key_field
         .map(|partition_key_field| {
             quote! {
-                #[derive(::dynomite::Attributes, Debug, Clone, PartialEq)]
+                #[derive(::dynomite::Attributes, Debug, Clone, PartialEq, Eq)]
                 #vis struct #name {
                     #partition_key_field,
                     #sort_key_field
