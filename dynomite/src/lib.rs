@@ -661,7 +661,7 @@ impl<T: IntoAttributes + FromAttributes> Attribute for T {
 #[cfg(feature = "uuid")]
 impl Attribute for Uuid {
     fn into_attr(self) -> AttributeValue {
-        AttributeValue::S(self.to_hyphenated().to_string())
+        AttributeValue::S(self.hyphenated().to_string())
     }
     fn from_attr(value: AttributeValue) -> Result<Self, AttributeError> {
         value
